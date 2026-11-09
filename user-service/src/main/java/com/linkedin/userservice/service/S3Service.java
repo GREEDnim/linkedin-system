@@ -37,6 +37,14 @@ public class S3Service {
             throw ApiException.badRequest("File must not be empty");
         }
 
+        // Quick sanity check on the client-declared content type: keeps .exe/.html
+        // "images" out of the bucket, but it is not a security boundary — a real
+        // one verifies magic bytes (e.g. Apache Tika).
+        String contentType = file.getContentType();
+        if (contentType == null || !contentType.startsWith("image/")) {
+            throw ApiException.badRequest("Only image files are accepted");
+        }
+
         String key = keyPrefix + "-" + UUID.randomUUID() + extractExtension(file.getOriginalFilename());
 
         String bucketName = awsProperties.s3().bucketName();
@@ -44,11 +52,8 @@ public class S3Service {
         PutObjectRequest.Builder request = PutObjectRequest.builder()
                 .bucket(bucketName)
                 .key(key)
-                .contentLength(file.getSize());
-
-        if (file.getContentType() != null) {
-            request.contentType(file.getContentType());
-        }
+                .contentLength(file.getSize())
+                .contentType(contentType);
 
         try (InputStream inputStream = file.getInputStream()) {
             s3Client.putObject(request.build(),
