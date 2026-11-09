@@ -1,3 +1,49 @@
 spring:
   application:
     name: post-service
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:post_db}?createDatabaseIfNotExist=true&allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:root}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    # Keep database access inside @Transactional service methods instead of the
+    # HTTP layer; also stops lazy collections leaking into JSON serialisation.
+    open-in-view: false
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      # Spring Boot 4 / spring-kafka 4 ship two JSON serializers:
+      #   JsonSerializer        -> Jackson 2 (com.fasterxml.jackson), NOT on the
+      #                            classpath here, so it fails with
+      #                            ClassNotFoundException: ObjectMapper
+      #   JacksonJsonSerializer -> Jackson 3 (tools.jackson), which is what Boot 4 uses
+      value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
+      properties:
+        # Do not stamp __TypeId__ headers: consumers in other services would otherwise
+        # fail unless they share this exact classpath. The JSON body is the contract.
+        spring.json.add.type.headers: false
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
+
+server:
+  port: 8082
+
+aws:
+  access-key: ${AWS_ACCESS_KEY:dev-access-key}
+  secret-key: ${AWS_SECRET_KEY:dev-secret-key}
+  region: ${AWS_REGION:us-east-1}
+  s3:
+    bucket-name: ${AWS_S3_BUCKET:linkedin-post-media}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
