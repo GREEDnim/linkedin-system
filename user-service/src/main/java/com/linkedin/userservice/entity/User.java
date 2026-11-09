@@ -7,8 +7,6 @@ import java.util.List;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
-import com.linkedin.userservice.UserRole;
-
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
@@ -22,12 +20,16 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
-import lombok.Data;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
+import lombok.ToString;
 
 @Entity 
 @Table (name = "users")
-@Data 
+@Getter
+@Setter
+@ToString
 @NoArgsConstructor 
 @AllArgsConstructor 
 @Builder 
@@ -40,6 +42,7 @@ public class User {
     private String email;
 
     @Column (nullable = false)
+    @ToString.Exclude // never let a password hash reach a log line
     private String password;
 
     @Column (nullable = false)
@@ -62,6 +65,7 @@ public class User {
     @CollectionTable  (name = "user_skills", joinColumns = @JoinColumn(name = "user_id", referencedColumnName = "id"))
     @Column(name = "skill")
     @Builder.Default
+    @ToString.Exclude // lazy collection: touching it in toString() can hit the DB
     private List<String> skills = new ArrayList<>();
 
     @CreationTimestamp 

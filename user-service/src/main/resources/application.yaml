@@ -1,3 +1,48 @@
 spring:
   application:
     name: user-service
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:user_db}?createDatabaseIfNotExist=true&allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:root}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    open-in-view: false
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        # Do not stamp __TypeId__ headers: consumers in other services would otherwise
+        # fail unless they share this exact classpath. The JSON body is the contract.
+        spring.json.add.type.headers: false
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
+
+server:
+  port: 8081
+
+jwt:
+  secret: ${JWT_SECRET:39NCVLkAJG+XR67PxwWkgP+P8fhYglztTCX/HMoOgPI=}
+  expiration: ${JWT_EXPIRATION:900000}            # 15 minutes, in MILLISECONDS
+  refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800000}   # 7 days, in MILLISECONDS
+
+aws:
+  access-key: ${AWS_ACCESS_KEY:dev-access-key}
+  secret-key: ${AWS_SECRET_KEY:dev-secret-key}
+  region: ${AWS_REGION:us-east-1}
+  s3:
+    bucket-name: ${AWS_S3_BUCKET:linkedin-profile-media}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+

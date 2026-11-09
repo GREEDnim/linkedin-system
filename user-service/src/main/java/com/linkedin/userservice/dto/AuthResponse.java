@@ -1,25 +1,26 @@
 package com.linkedin.userservice.dto;
 
+import com.linkedin.userservice.entity.User;
 
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+public record AuthResponse(
+        String userId,
+        String accessToken,
+        String refreshToken,
+        String tokenType,
+        String email,
+        String firstName,
+        String lastName) {
 
-@Data 
-@AllArgsConstructor 
-@NoArgsConstructor 
-public class AuthResponse {
+    public static final String BEARER = "Bearer";
 
-
-    private String userId;
-
-    private String accessToken;
-    private String refreshToken;
-    private String tokenType = "Bearer";
-    private String email;  
-    private String firstName;
-    private String lastName;
-
-
-
+    public static AuthResponse of(User user, String accessToken, String refreshToken) {
+        return new AuthResponse(
+                user.getId(),
+                accessToken,
+                refreshToken,
+                BEARER,
+                user.getEmail(),
+                user.getFirstName(),
+                user.getLastName());
+    }
 }

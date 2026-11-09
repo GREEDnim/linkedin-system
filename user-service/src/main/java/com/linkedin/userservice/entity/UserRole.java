@@ -1,4 +1,4 @@
-package com.linkedin.userservice;
+package com.linkedin.userservice.entity;
 
 public enum UserRole {
     ADMIN, 
