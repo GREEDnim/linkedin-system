@@ -261,8 +261,16 @@ public class UserService {
 
         User user = findUserOrThrow(userId);
 
-        user.setProfilePhotoUrl(s3Service.uploadFile(file, "profiles/" + userId + "/avatar"));
+        // Remember the outgoing key before overwriting it: without it the old avatar becomes an
+        // object nothing points at, which is the same orphan problem in miniature.
+        String previousKey = user.getProfilePhotoKey();
+
+        S3Service.StoredObject uploaded = s3Service.uploadFile(file, "profiles/" + userId + "/avatar");
+        user.setProfilePhotoUrl(uploaded.url());
+        user.setProfilePhotoKey(uploaded.key());
         User saved = userRepository.save(user);
+
+        s3Service.deleteObject(previousKey);
 
         log.info("profile photo uploaded for user: {}", userId);
         return UserResponse.from(saved);

@@ -58,6 +58,10 @@ public class User {
     private String profilePhotoUrl;
     private String coverPhotoUrl;
 
+    /** The object key behind profilePhotoUrl, so a replaced or deleted avatar can be removed. */
+    @Column(length = 500)
+    private String profilePhotoKey;
+
     @Column(columnDefinition = "varchar(20)")
     @Enumerated(EnumType.STRING)
     private UserRole role;

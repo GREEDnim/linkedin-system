@@ -56,12 +56,13 @@ public class PostService {
 
         // Upload first: if S3 fails the request fails before anything is persisted.
         // Doing it after the insert would leave a row (and an event) pointing nowhere.
-        String imageUrl = uploadImage(authorId, image);
+        S3Service.StoredObject uploadedImage = uploadImage(authorId, image);
 
         Post post = Post.builder()
                 .authorId(authorId)
                 .content(trimmedContent)
-                .imageUrl(imageUrl)
+                .imageUrl(uploadedImage == null ? null : uploadedImage.url())
+                .imageKey(uploadedImage == null ? null : uploadedImage.key())
                 .build();
 
         Post saved = postRepository.saveAndFlush(post);
@@ -70,7 +71,7 @@ public class PostService {
         // and the event (and the response) must carry the real createdAt.
         kafkaTemplate.send(POST_CREATED_TOPIC, saved.getId(), PostCreatedEvent.from(saved));
         log.info("Post created: {} by {} (with image: {})",
-                saved.getId(), authorId, imageUrl != null);
+                saved.getId(), authorId, uploadedImage != null);
 
         return PostResponse.from(saved);
     }
@@ -97,6 +98,10 @@ public class PostService {
 
         postRepository.delete(post);
 
+        // After the row is gone, and best-effort: the media is worthless without the post, but
+        // a storage hiccup must not resurrect the post the author asked to remove.
+        s3Service.deleteObject(post.getImageKey());
+
         kafkaTemplate.send(POST_DELETED_TOPIC, postId, PostDeletedEvent.from(post));
         log.info("Post {} deleted by {} ({} comments removed)", postId, requestingUserId, removedComments);
     }
@@ -122,7 +127,7 @@ public class PostService {
      * Stores the post image under posts/{authorId}/ and returns its public URL,
      * or null when no image was supplied. S3Service turns failures into 400/502.
      */
-    private String uploadImage(String authorId, MultipartFile image) {
+    private S3Service.StoredObject uploadImage(String authorId, MultipartFile image) {
         if (image == null || image.isEmpty()) {
             return null;
         }

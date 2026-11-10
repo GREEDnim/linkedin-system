@@ -19,8 +19,11 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 /**
- * Object storage for post media. Not used by the post endpoints yet: they take an
- * already-uploaded imageUrl. Ready for the media upload endpoint.
+ * Object storage for post media.
+ *
+ * <p>Returns the object key alongside the URL, because the key is the only thing that can
+ * delete the object later. It cannot be reconstructed from the post: keys are namespaced by
+ * author, so a deleted post's row cannot be turned back into a key unless it was stored.
  */
 @Service
 @Slf4j
@@ -31,11 +34,12 @@ public class S3Service {
     private final AwsProperties awsProperties;
 
     /**
-     * Uploads a file and returns its public URL.
+     * Uploads a file.
      *
-     * @param keyPrefix object key prefix, e.g. "posts/{postId}/image"
+     * @param keyPrefix object key prefix, e.g. "posts/{authorId}/image"
+     * @return the stored key (for later deletion) and the URL clients should use
      */
-    public String uploadFile(MultipartFile file, String keyPrefix) {
+    public StoredObject uploadFile(MultipartFile file, String keyPrefix) {
         if (file == null || file.isEmpty()) {
             throw ApiException.badRequest("File must not be empty");
         }
@@ -74,7 +78,30 @@ public class S3Service {
                 .toString();
 
         log.info("Uploaded file to {}", key);
-        return url;
+        return new StoredObject(key, url);
+    }
+
+    /**
+     * Removes an object. Deliberately best-effort and idempotent: the caller is deleting a row
+     * it has every right to delete, and failing that because object storage hiccuped would be
+     * worse than leaving bytes behind. S3 treats deleting an absent key as success anyway.
+     */
+    public void deleteObject(String key) {
+        if (key == null || key.isBlank()) {
+            return;
+        }
+        try {
+            s3Client.deleteObject(builder -> builder
+                    .bucket(awsProperties.s3().bucketName())
+                    .key(key));
+            log.info("Deleted object {}", key);
+        } catch (SdkException ex) {
+            log.warn("Could not delete object {} - it is now orphaned: {}", key, ex.getMessage());
+        }
+    }
+
+    /** @param key the object key, needed to delete it later; @param url what clients link to */
+    public record StoredObject(String key, String url) {
     }
 
     /** Keeps the original extension (".png"), so browsers serve the right content type. */

@@ -53,6 +53,13 @@ public class Post {
     @Column(length = 500)
     private String imageUrl;
 
+    /**
+     * The object key behind imageUrl, kept so the image can be deleted with the post. It cannot
+     * be reconstructed from the URL afterwards: keys are namespaced by author, not by post id.
+     */
+    @Column(length = 500)
+    private String imageKey;
+
     /** Denormalised counters, kept in sync by the like/comment endpoints. */
     private int likeCount;
 

@@ -27,12 +27,13 @@ public class S3Service {
     private final AwsProperties awsProperties;
 
     /**
-     * Uploads a file and returns its public URL.
+     * Uploads a file.
      *
      * @param file the multipart upload
      * @param keyPrefix object key prefix, e.g. "profiles/{userId}/avatar"
+     * @return the stored key (for deleting or replacing the object) and the URL clients use
      */
-    public String uploadFile(MultipartFile file, String keyPrefix) {
+    public StoredObject uploadFile(MultipartFile file, String keyPrefix) {
         if (file == null || file.isEmpty()) {
             throw ApiException.badRequest("File must not be empty");
         }
@@ -72,7 +73,30 @@ public class S3Service {
                 .toString();
 
         log.info("Uploaded file to {}", key);
-        return url;
+        return new StoredObject(key, url);
+    }
+
+    /**
+     * Removes an object. Best-effort: the caller is deleting or replacing a record it owns, and
+     * failing that because storage hiccuped would be worse than leaving bytes behind. S3 treats
+     * deleting an absent key as success, so this is safe to call for a stale key.
+     */
+    public void deleteObject(String key) {
+        if (key == null || key.isBlank()) {
+            return;
+        }
+        try {
+            s3Client.deleteObject(builder -> builder
+                    .bucket(awsProperties.s3().bucketName())
+                    .key(key));
+            log.info("Deleted object {}", key);
+        } catch (SdkException ex) {
+            log.warn("Could not delete object {} - it is now orphaned: {}", key, ex.getMessage());
+        }
+    }
+
+    /** @param key the object key, needed to delete it later; @param url what clients link to */
+    public record StoredObject(String key, String url) {
     }
 
     /** Keeps the original extension (".png"), so browsers serve the right content type. */
