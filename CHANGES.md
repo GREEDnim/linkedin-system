@@ -1,3 +1,11 @@
+> **Historical document.**
+>
+> This describes the state of `user-service` at the end of its first round of work.
+> Five services have been added since (post, feed, search, notification, gateway), and
+> their changes are described in the commit messages rather than here. Treat the
+> details below as a record of how user-service got to its current shape, not as a
+> map of the repository.
+
 # `user-service` — Change Log & Notes
 
 > Every change made to `user-service` since the initial scaffold, with the reasoning
