@@ -1,8 +1,17 @@
-# LinkedIn Clone
+# LinkedIn, rebuilt service by service
 
-A LinkedIn-style social platform built as six Spring Boot services that share nothing but events.
-Profiles, connections, posts with media, a fan-out feed, and full-text search — each owned by the
-service that owns its data.
+A follow-along of [How LinkedIn Searches 900M+ Jobs in Milliseconds](https://www.youtube.com/watch?v=K-EmCZWoCGA)
+by [Yeshendra Dhaker](https://www.youtube.com/@yeshendradhaker) — and an improvisation on it.
+
+The video is where the shape of this repository comes from: separate Spring Boot services, Kafka
+between them, Redis and Elasticsearch where each belongs. The improvisation starts where a
+follow-along usually stops — a gateway that owns authentication, refresh-token rotation with replay
+detection, rate limiting, CORS, dead-letter topics, media and account deletion, and two scripts that
+prove it still works. Where a decision looks odd, the README says why it is that way rather than
+leaving it to be guessed at.
+
+Profiles, connections, posts with media, a fan-out feed, and full-text search — six services that
+share nothing but events, each owning its own data.
 
 The system is deliberately boring where it matters: one entry point, one identity token format, one
 event contract, and no service reading another service's database.
