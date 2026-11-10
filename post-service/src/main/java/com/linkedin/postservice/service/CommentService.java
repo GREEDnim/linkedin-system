@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.linkedin.postservice.dto.CommentResponse;
 import com.linkedin.postservice.dto.CreateCommentRequest;
 import com.linkedin.postservice.entity.Comment;
+import com.linkedin.postservice.entity.Post;
 import com.linkedin.postservice.event.CommentCreatedEvent;
 import com.linkedin.postservice.event.CommentDeletedEvent;
 import com.linkedin.postservice.exception.ApiException;
@@ -43,9 +44,8 @@ public class CommentService {
             // Defence in depth: the @NotBlank on the DTO already covers HTTP.
             throw ApiException.badRequest("Comment content must not be empty");
         }
-        if (!postRepository.existsById(postId)) {
-            throw ApiException.notFound("Post not found: " + postId);
-        }
+        Post post = postRepository.findById(postId)
+                .orElseThrow(() -> ApiException.notFound("Post not found: " + postId));
 
         Comment saved = commentRepository.saveAndFlush(Comment.builder()
                 .postId(postId)
@@ -57,7 +57,7 @@ public class CommentService {
         // updates when two people comment at the same moment.
         postRepository.incrementCommentCount(postId);
 
-        kafkaTemplate.send(COMMENT_CREATED_TOPIC, saved.getId(), CommentCreatedEvent.from(saved));
+        kafkaTemplate.send(COMMENT_CREATED_TOPIC, saved.getId(), CommentCreatedEvent.from(saved, post));
         log.info("Comment {} created on post {} by {}", saved.getId(), postId, authorId);
 
         return CommentResponse.from(saved);

@@ -39,9 +39,8 @@ public class LikeService {
     @Transactional
     public PostLikeResponse likePost(String postId, String authorId) {
 
-        if (!postRepository.existsById(postId)) {
-            throw ApiException.notFound("Post not found: " + postId);
-        }
+        Post post = postRepository.findById(postId)
+                .orElseThrow(() -> ApiException.notFound("Post not found: " + postId));
 
         if (likeRepository.existsByPostIdAndAuthorId(postId, authorId)) {
             log.debug("Post {} already liked by {} — no-op", postId, authorId);
@@ -57,7 +56,7 @@ public class LikeService {
         // once must not overwrite each other's increment.
         postRepository.incrementLikeCount(postId);
 
-        kafkaTemplate.send(POST_LIKED_TOPIC, postId, new PostLikedEvent(postId, authorId));
+        kafkaTemplate.send(POST_LIKED_TOPIC, postId, PostLikedEvent.of(post, authorId));
         log.info("Post {} liked by {}", postId, authorId);
 
         return currentState(postId, authorId);
@@ -66,14 +65,13 @@ public class LikeService {
     @Transactional
     public PostLikeResponse unlikePost(String postId, String authorId) {
 
-        if (!postRepository.existsById(postId)) {
-            throw ApiException.notFound("Post not found: " + postId);
-        }
+        Post post = postRepository.findById(postId)
+                .orElseThrow(() -> ApiException.notFound("Post not found: " + postId));
 
         int removed = likeRepository.deleteLike(postId, authorId);
         if (removed > 0) {
             postRepository.decrementLikeCount(postId);
-            kafkaTemplate.send(POST_UNLIKED_TOPIC, postId, new PostUnlikedEvent(postId, authorId));
+            kafkaTemplate.send(POST_UNLIKED_TOPIC, postId, PostUnlikedEvent.of(post, authorId));
             log.info("Post {} unliked by {}", postId, authorId);
         }
         // Removing a like that was never there is a no-op: DELETE is idempotent,
