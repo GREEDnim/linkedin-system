@@ -1,6 +1,12 @@
 spring:
   application:
     name: user-service
+  data:
+    redis:
+      # Holds the refresh-token session records that make rotation and logout
+      # possible. Access tokens stay stateless; only the long-lived ones are stored.
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
   datasource:
     url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:user_db}?createDatabaseIfNotExist=true&allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC
     username: ${DB_USERNAME:root}
@@ -32,13 +38,15 @@ jwt:
   secret: ${JWT_SECRET:39NCVLkAJG+XR67PxwWkgP+P8fhYglztTCX/HMoOgPI=}
   expiration: ${JWT_EXPIRATION:900000}            # 15 minutes, in MILLISECONDS
   refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800000}   # 7 days, in MILLISECONDS
+  # Issuer claim, and what the gateway requires before accepting a token.
+  issuer: ${JWT_ISSUER:user-service}
 
 aws:
   access-key: ${AWS_ACCESS_KEY:dev-access-key}
   secret-key: ${AWS_SECRET_KEY:dev-secret-key}
   region: ${AWS_REGION:us-east-1}
-  # Blank means "talk to AWS". Set AWS_ENDPOINT=http://localhost:9090 to use the
-  # s3mock container from docker-compose instead, which makes uploads testable locally.
+  # Blank means "talk to AWS". Set AWS_ENDPOINT=http://localhost:9000 to use the
+  # MinIO container from docker-compose instead, which makes uploads testable locally.
   endpoint: ${AWS_ENDPOINT:}
   s3:
     bucket-name: ${AWS_S3_BUCKET:linkedin-profile-media}

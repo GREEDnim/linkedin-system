@@ -41,6 +41,9 @@ jwt:
   # Must be the SAME value user-service signs with, or every request is rejected.
   # Base64: decoded and used as an HS256 key (needs >= 32 bytes).
   secret: ${JWT_SECRET:39NCVLkAJG+XR67PxwWkgP+P8fhYglztTCX/HMoOgPI=}
+  # Must match jwt.issuer in user-service; a token from anyone else is rejected even if it
+  # happens to carry a valid signature.
+  issuer: ${JWT_ISSUER:user-service}
 
 management:
   endpoints:

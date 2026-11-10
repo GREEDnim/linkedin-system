@@ -1,15 +1,12 @@
 package com.linkedin.userservice.service;
 
-import java.util.Date;
-
-import javax.crypto.SecretKey;
+import java.util.UUID;
 
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.linkedin.userservice.config.JwtProperties;
 import com.linkedin.userservice.dto.AuthResponse;
 import com.linkedin.userservice.dto.LoginRequest;
 import com.linkedin.userservice.dto.RegisterRequest;
@@ -18,14 +15,22 @@ import com.linkedin.userservice.entity.UserRole;
 import com.linkedin.userservice.event.UserCreatedEvent;
 import com.linkedin.userservice.exception.ApiException;
 import com.linkedin.userservice.repository.UserRepository;
+import com.linkedin.userservice.security.JwtService;
+import com.linkedin.userservice.security.TokenStore;
 
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.Jwts.SIG;
-import io.jsonwebtoken.io.Decoders;
-import io.jsonwebtoken.security.Keys;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * Registration, login, and the refresh lifecycle.
+ *
+ * <p>The token model is the standard one: a short-lived access token that is never stored
+ * (every service can verify it offline), and a long-lived refresh token that is stored so
+ * it can be rotated and revoked. Each login - not each token - has a session id, so
+ * logging out or detecting a replay ends the whole login in one operation.
+ */
 @Service
 @Slf4j
 @RequiredArgsConstructor
@@ -36,7 +41,8 @@ public class AuthService {
     private final UserRepository userRepository;
     private final BCryptPasswordEncoder passwordEncoder;
     private final KafkaTemplate<String, Object> kafkaTemplate;
-    private final JwtProperties jwtProperties;
+    private final JwtService jwtService;
+    private final TokenStore tokenStore;
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
@@ -63,7 +69,7 @@ public class AuthService {
         kafkaTemplate.send(USER_CREATED_TOPIC, savedUser.getId(), UserCreatedEvent.from(savedUser));
         log.info("user.created event published: {}", savedUser.getId());
 
-        return buildAuthResponse(savedUser);
+        return startSession(savedUser);
     }
 
     @Transactional(readOnly = true)
@@ -80,38 +86,109 @@ public class AuthService {
         }
 
         log.info("Login successful: {}", user.getId());
-        return buildAuthResponse(user);
+        return startSession(user);
     }
 
-    private AuthResponse buildAuthResponse(User user) {
-        return AuthResponse.of(
-                user,
-                generateAccessToken(user.getId(), user.getEmail()),
-                generateRefreshToken(user.getId()));
+    /**
+     * Exchanges a refresh token for a new pair - and consumes the old one.
+     *
+     * <p>Rotation is what makes theft detectable: a token that verifies but was already
+     * spent can only come from a second party holding a copy, so the session is revoked
+     * rather than a new pair being issued. Presenting a token twice is therefore not a
+     * harmless retry, which is why clients must persist the new pair from the response.
+     *
+     * <p>Access tokens already issued stay valid until they expire (minutes); this is the
+     * deliberate trade that keeps per-request authorisation stateless.
+     */
+    @Transactional(readOnly = true)
+    public AuthResponse refresh(String refreshToken) {
+
+        Claims claims = parseRefreshToken(refreshToken);
+
+        String sessionId = claims.get(JwtService.CLAIM_SESSION, String.class);
+        String jti = claims.getId();
+        String userId = claims.getSubject();
+
+        if (!tokenStore.isSessionActive(sessionId)) {
+            throw ApiException.unauthorized("Session has ended, please log in again");
+        }
+
+        // GETDEL: only one caller can win. A null here means this token was already spent
+        // - the signature is still valid, so it is not tampering, it is a replayed copy.
+        if (tokenStore.consumeRefreshToken(jti) == null) {
+            tokenStore.endSession(sessionId);
+            log.warn("Refresh token reuse detected for session {} - session revoked", sessionId);
+            throw ApiException.unauthorized("Refresh token already used; session revoked");
+        }
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> ApiException.unauthorized("Account no longer exists"));
+
+        log.info("Refreshed session {} for user {}", sessionId, userId);
+        return issueForSession(user, sessionId);
     }
 
-    private String generateAccessToken(String id, String email) {
-        return Jwts.builder()
-                .claim("userId", id)
-                .claim("type", "access")
-                .expiration(new Date(System.currentTimeMillis() + jwtProperties.expiration()))
-                .issuedAt(new Date())
-                .subject(email)
-                .signWith(getSigningKey(), SIG.HS256)
-                .compact();
+    /**
+     * Ends the session behind a refresh token.
+     *
+     * <p>Deliberately quiet: an expired, malformed or already-revoked token still produces a
+     * success, so logout cannot be used to probe whether a token exists.
+     */
+    public void logout(String refreshToken) {
+
+        if (refreshToken == null || refreshToken.isBlank()) {
+            return;
+        }
+
+        try {
+            Claims claims = jwtService.parse(refreshToken);
+            String sessionId = claims.get(JwtService.CLAIM_SESSION, String.class);
+            if (sessionId != null) {
+                tokenStore.endSession(sessionId);
+                log.info("Session {} ended by logout", sessionId);
+            }
+        } catch (JwtException | IllegalArgumentException ex) {
+            log.debug("Ignoring unusable token at logout: {}", ex.getMessage());
+        }
     }
 
-    private String generateRefreshToken(String id) {
-        return Jwts.builder()
-                .claim("userId", id)
-                .claim("type", "refresh")
-                .expiration(new Date(System.currentTimeMillis() + jwtProperties.refreshExpiration()))
-                .issuedAt(new Date())
-                .signWith(getSigningKey(), SIG.HS256)
-                .compact();
+    private Claims parseRefreshToken(String refreshToken) {
+
+        if (refreshToken == null || refreshToken.isBlank()) {
+            throw ApiException.unauthorized("Refresh token is required");
+        }
+
+        Claims claims;
+        try {
+            claims = jwtService.parse(refreshToken);
+        } catch (JwtException | IllegalArgumentException ex) {
+            throw ApiException.unauthorized("Invalid or expired refresh token");
+        }
+
+        // The mirror image of the gateway's check: it refuses refresh tokens, this refuses
+        // access tokens - so neither kind can be used where the other belongs.
+        if (!JwtService.TYPE_REFRESH.equals(claims.get(JwtService.CLAIM_TYPE, String.class))) {
+            throw ApiException.unauthorized("Token is not a refresh token");
+        }
+        if (claims.getId() == null || claims.getSubject() == null
+                || claims.get(JwtService.CLAIM_SESSION, String.class) == null) {
+            throw ApiException.unauthorized("Refresh token is missing required claims");
+        }
+
+        return claims;
     }
 
-    private SecretKey getSigningKey() {
-        return Keys.hmacShaKeyFor(Decoders.BASE64.decode(jwtProperties.secret()));
+    /** One login = one session id, which owns every token issued for it. */
+    private AuthResponse startSession(User user) {
+        String sessionId = UUID.randomUUID().toString();
+        tokenStore.startSession(sessionId);
+        return issueForSession(user, sessionId);
+    }
+
+    private AuthResponse issueForSession(User user, String sessionId) {
+        JwtService.TokenPair pair = jwtService.issue(user, sessionId);
+        // Registered before it is handed out: a token the store has never seen cannot be used.
+        tokenStore.storeRefreshToken(pair.refreshJti(), sessionId);
+        return AuthResponse.of(user, pair.accessToken(), pair.refreshToken(), pair.accessTtlSeconds());
     }
 }
