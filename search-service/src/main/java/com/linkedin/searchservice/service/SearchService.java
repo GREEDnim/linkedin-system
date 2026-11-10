@@ -193,11 +193,17 @@ public class SearchService {
         return email == null ? null : email.trim().toLowerCase(Locale.ROOT);
     }
 
-    /** An event without an id cannot be indexed, so skip it loudly instead of NPE. */
+    /**
+     * An event without an id cannot be indexed.
+     *
+     * <p>This throws rather than returning "skip": a record that cannot be applied is exactly
+     * what a dead-letter topic is for. Dropping it with a warning leaves nothing to inspect and
+     * no way to replay it after the producer is fixed, and a log line is not a queue.
+     */
     private static boolean isInvalid(String id, String topic) {
         if (id == null || id.isBlank()) {
-            log.warn("Skipping {} event without an id", topic);
-            return true;
+            throw new IllegalArgumentException(
+                    "Event on " + topic + " carries no id - cannot be indexed");
         }
         return false;
     }

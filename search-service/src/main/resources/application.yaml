@@ -19,6 +19,12 @@ spring:
 
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      # Only used by the dead-letter recoverer: it republishes failed records to <topic>.DLT.
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
+      properties:
+        spring.json.add.type.headers: false
     consumer:
       group-id: search-service
       # Replay retained events on a fresh group so a brand-new index backfills
