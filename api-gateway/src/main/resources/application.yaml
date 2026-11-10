@@ -56,6 +56,10 @@ jwt:
   issuer: ${JWT_ISSUER:user-service}
 
 gateway:
+  cors:
+    # Exact origins, for development. A wildcard would let any site call the API with a
+    # user's token, and browsers refuse wildcard-plus-credentials anyway.
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173,http://localhost:8081,http://localhost:19006}
   rate-limit:
     enabled: ${RATE_LIMIT_ENABLED:true}
     # Per client IP per minute. The auth budget is the one that matters: it is what stops
