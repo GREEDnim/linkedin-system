@@ -7,6 +7,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -45,6 +46,7 @@ import lombok.extern.slf4j.Slf4j;
  * the services down to loopback/private networking is the complementary half.
  */
 @Component
+@Order(20)   // after the rate limiter (10): budgets are checked before tokens
 @Slf4j
 @RequiredArgsConstructor
 public class JwtAuthFilter extends OncePerRequestFilter {

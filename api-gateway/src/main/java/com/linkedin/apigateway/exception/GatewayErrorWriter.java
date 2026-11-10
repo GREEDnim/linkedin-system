@@ -24,6 +24,10 @@ public final class GatewayErrorWriter {
         write(response, ErrorResponse.of(HttpStatus.UNAUTHORIZED, message));
     }
 
+    public static void tooManyRequests(HttpServletResponse response, String message) throws IOException {
+        write(response, ErrorResponse.of(HttpStatus.TOO_MANY_REQUESTS, message));
+    }
+
     private static void write(HttpServletResponse response, ErrorResponse body) throws IOException {
         response.setStatus(body.status());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
