@@ -29,6 +29,11 @@ spring:
 
 server:
   port: 8083
+  address: ${SERVER_ADDRESS:127.0.0.1}
+  # Loopback only: the gateway is the single entry point, and every service trusts the
+  # X-User-Id header that only the gateway is allowed to set. Binding 0.0.0.0 would let
+  # anyone on the network reach a service directly and forge that header. In a container
+  # deployment set SERVER_ADDRESS=0.0.0.0 so the gateway can still reach them.
 
 feed:
   # Hard cap per user's stored feed. Every fan-out trims to keep only the newest

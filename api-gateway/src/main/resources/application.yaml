@@ -10,25 +10,29 @@ spring:
         webmvc:
           routes:
             # One entry per owning service. Every URI is overridable so the same
-            # configuration works in compose (service names) and locally (localhost).
+            # configuration works in compose (service names) and locally.
+            #
+            # 127.0.0.1 rather than localhost on purpose: the services bind loopback
+            # (server.address), and on a dual-stack machine localhost can resolve to ::1
+            # and reach an unrelated process that happens to own the wildcard port.
             - id: user-service
-              uri: ${USER_SERVICE_URI:http://localhost:8081}
+              uri: ${USER_SERVICE_URI:http://127.0.0.1:8081}
               predicates:
                 - Path=/api/v1/auth/**,/api/v1/users/**
             - id: post-service
-              uri: ${POST_SERVICE_URI:http://localhost:8082}
+              uri: ${POST_SERVICE_URI:http://127.0.0.1:8082}
               predicates:
                 - Path=/api/v1/posts/**
             - id: feed-service
-              uri: ${FEED_SERVICE_URI:http://localhost:8083}
+              uri: ${FEED_SERVICE_URI:http://127.0.0.1:8083}
               predicates:
                 - Path=/api/v1/feed/**
             - id: search-service
-              uri: ${SEARCH_SERVICE_URI:http://localhost:8084}
+              uri: ${SEARCH_SERVICE_URI:http://127.0.0.1:8084}
               predicates:
                 - Path=/api/v1/search/**
             - id: notification-service
-              uri: ${NOTIFICATION_SERVICE_URI:http://localhost:8085}
+              uri: ${NOTIFICATION_SERVICE_URI:http://127.0.0.1:8085}
               predicates:
                 - Path=/api/v1/notifications/**
 
