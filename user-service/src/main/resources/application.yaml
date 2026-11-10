@@ -21,7 +21,11 @@ spring:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      # JacksonJsonSerializer (Jackson 3) rather than the Jackson 2 JsonSerializer.
+      # Boot 4 ships Jackson 3, and the older class only worked here because jjwt-jackson
+      # happens to pull jackson-databind 2.x in at runtime scope - a transitive accident that
+      # would break event publishing the day that dependency changes.
+      value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
       properties:
         # Do not stamp __TypeId__ headers: consumers in other services would otherwise
         # fail unless they share this exact classpath. The JSON body is the contract.
