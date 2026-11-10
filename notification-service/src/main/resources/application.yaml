@@ -1,3 +1,30 @@
 spring:
   application:
     name: notification-service
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: notification-service
+      # No committed offsets exist on first boot: replay from the start so proof
+      # that the topic holds the right payloads is visible in the log immediately.
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      # One undecodable record must not wedge the partition forever: the wrapper
+      # logs and skips it instead of failing the same offset on every restart.
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        # Boot 4 ships Jackson 3, so the delegate is JacksonJsonDeserializer
+        # (tools.jackson), not the Jackson 2 JsonSerializer post-service used to
+        # need. The events carry no __TypeId__ headers — the JSON body is the
+        # contract, and each listener names the type it expects.
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JacksonJsonDeserializer
+        spring.json.use.type.headers: false
+
+server:
+  port: 8085
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
