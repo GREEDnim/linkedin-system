@@ -42,9 +42,16 @@ public class Connection {
     @Column (nullable = false)
     private String receiverId;
 
-    @Column (nullable = false)
-    @Enumerated (EnumType.STRING)
+    @Column(nullable = false, columnDefinition = "varchar(20)")
+    @Enumerated(EnumType.STRING)
     private ConnectionStatus status;
+
+    /**
+     * When this pair last became CONNECTED. Null until the first acceptance, and
+     * stamped again on every re-connect — unlike createdAt, which stays the date of
+     * the very first request and would otherwise make "connected since" a lie.
+     */
+    private LocalDateTime connectedAt;
 
     @CreationTimestamp 
     private LocalDateTime createdAt;

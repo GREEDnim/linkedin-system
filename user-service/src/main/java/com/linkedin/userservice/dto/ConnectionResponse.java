@@ -10,7 +10,8 @@ public record ConnectionResponse(
         String requesterId,
         String receiverId,
         ConnectionStatus status,
-        LocalDateTime createdAt) {
+        LocalDateTime createdAt,
+        LocalDateTime connectedAt) {
 
     public static ConnectionResponse from(Connection connection) {
         return new ConnectionResponse(
@@ -18,6 +19,7 @@ public record ConnectionResponse(
                 connection.getRequesterId(),
                 connection.getReceiverId(),
                 connection.getStatus(),
-                connection.getCreatedAt());
+                connection.getCreatedAt(),
+                connection.getConnectedAt());
     }
 }

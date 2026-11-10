@@ -1,5 +1,6 @@
 package com.linkedin.userservice.service;
 
+import java.time.LocalDateTime;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -21,6 +22,7 @@ import com.linkedin.userservice.entity.Connection;
 import com.linkedin.userservice.entity.ConnectionStatus;
 import com.linkedin.userservice.entity.User;
 import com.linkedin.userservice.event.ConnectionAcceptedEvent;
+import com.linkedin.userservice.event.ConnectionDeletedEvent;
 import com.linkedin.userservice.event.ConnectionRequestedEvent;
 import com.linkedin.userservice.event.UserUpdatedEvent;
 import com.linkedin.userservice.exception.ApiException;
@@ -37,6 +39,7 @@ public class UserService {
 
     private static final String CONNECTION_REQUESTED_TOPIC = "connection.requested";
     private static final String CONNECTION_ACCEPTED_TOPIC = "connection.accepted";
+    private static final String CONNECTION_DELETED_TOPIC = "connection.deleted";
     private static final String USER_UPDATED_TOPIC = "user.updated";
 
     private final ConnectionRepository connectionRepository;
@@ -72,8 +75,9 @@ public class UserService {
                         "You are already connected with this user");
                 case PENDING -> throw ApiException.conflict(
                         "A connection request already exists between these users");
-                case REJECTED -> log.info("Re-request allowed after an earlier rejection: {} -> {}",
-                        requesterId, receiverId);
+                case REJECTED, REMOVED -> log.info(
+                        "Re-request allowed after {}: {} -> {}",
+                        connection.getStatus(), requesterId, receiverId);
             }
         }
 
@@ -96,6 +100,7 @@ public class UserService {
         Connection connection = loadPendingForReceiver(connectionId, requestingUserId);
 
         connection.setStatus(ConnectionStatus.CONNECTED);
+        connection.setConnectedAt(LocalDateTime.now());
         Connection saved = connectionRepository.saveAndFlush(connection);
 
         kafkaTemplate.send(CONNECTION_ACCEPTED_TOPIC, saved.getId(), ConnectionAcceptedEvent.from(saved));
@@ -119,6 +124,41 @@ public class UserService {
         // No event on purpose: announcing a rejection would break the silence
         // LinkedIn guarantees, and notification-service would have nothing to send.
         log.info("Connection rejected: {}", connectionId);
+
+        return ConnectionResponse.from(saved);
+    }
+
+    /**
+     * Removes an active connection. Either party may do it, exactly like LinkedIn
+     * (no "only the person who asked can undo it" rule).
+     *
+     * <p>The row survives as REMOVED rather than being deleted: it keeps the audit
+     * trail, and — because one row per pair is enforced by the unique key — a later
+     * re-connect reuses it (see {@link #sendConnectionRequest}). This method is the
+     * mirror of accept: it flips CONNECTED -> REMOVED and announces
+     * connection.deleted so downstream projections (feed-service's graph) can
+     * stop treating the pair as connected.
+     */
+    @Transactional
+    public ConnectionResponse disconnect(String connectionId, String requestingUserId) {
+
+        Connection connection = connectionRepository.findById(connectionId).orElseThrow(
+                () -> ApiException.notFound("Connection not found: " + connectionId));
+
+        boolean participant = connection.getRequesterId().equals(requestingUserId)
+                || connection.getReceiverId().equals(requestingUserId);
+        if (!participant) {
+            throw ApiException.forbidden("You are not part of this connection");
+        }
+        if (connection.getStatus() != ConnectionStatus.CONNECTED) {
+            throw ApiException.conflict("Connection is not active: " + connection.getStatus());
+        }
+
+        connection.setStatus(ConnectionStatus.REMOVED);
+        Connection saved = connectionRepository.saveAndFlush(connection);
+
+        kafkaTemplate.send(CONNECTION_DELETED_TOPIC, saved.getId(), ConnectionDeletedEvent.from(saved));
+        log.info("Connection removed: {} by {}", connectionId, requestingUserId);
 
         return ConnectionResponse.from(saved);
     }

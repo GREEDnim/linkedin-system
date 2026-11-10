@@ -58,7 +58,8 @@ public class User {
     private String profilePhotoUrl;
     private String coverPhotoUrl;
 
-    @Enumerated (EnumType.STRING)
+    @Column(columnDefinition = "varchar(20)")
+    @Enumerated(EnumType.STRING)
     private UserRole role;
 
     @ElementCollection 

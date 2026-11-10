@@ -4,6 +4,7 @@ import java.util.List;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -99,6 +100,18 @@ public class UserController {
             @RequestHeader("X-User-Id") String requestingUserId) {
 
         return ResponseEntity.ok(userService.rejectConnectionRequest(connectionId, requestingUserId));
+    }
+
+    /**
+     * Removes an active connection. Either participant may call it; the row is kept
+     * as REMOVED (not deleted) so the pair can re-connect later and the history survives.
+     */
+    @DeleteMapping("/connections/{connectionId}")
+    public ResponseEntity<ConnectionResponse> disconnect(
+            @PathVariable String connectionId,
+            @RequestHeader("X-User-Id") String requestingUserId) {
+
+        return ResponseEntity.ok(userService.disconnect(connectionId, requestingUserId));
     }
 
     @GetMapping("/{userId}/connections")
