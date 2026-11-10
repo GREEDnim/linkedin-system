@@ -1,3 +1,54 @@
 spring:
   application:
     name: api-gateway
+  cloud:
+    gateway:
+      server:
+        # Spring Cloud Gateway's servlet flavour (5.x). Route prefix confirmed
+        # against spring-cloud-gateway-server-webmvc-5.0.4: routes live under
+        # spring.cloud.gateway.server.webmvc, not the reactive spring.cloud.gateway.
+        webmvc:
+          routes:
+            # One entry per owning service. Every URI is overridable so the same
+            # configuration works in compose (service names) and locally (localhost).
+            - id: user-service
+              uri: ${USER_SERVICE_URI:http://localhost:8081}
+              predicates:
+                - Path=/api/v1/auth/**,/api/v1/users/**
+            - id: post-service
+              uri: ${POST_SERVICE_URI:http://localhost:8082}
+              predicates:
+                - Path=/api/v1/posts/**
+            - id: feed-service
+              uri: ${FEED_SERVICE_URI:http://localhost:8083}
+              predicates:
+                - Path=/api/v1/feed/**
+            - id: search-service
+              uri: ${SEARCH_SERVICE_URI:http://localhost:8084}
+              predicates:
+                - Path=/api/v1/search/**
+            - id: notification-service
+              uri: ${NOTIFICATION_SERVICE_URI:http://localhost:8085}
+              predicates:
+                - Path=/api/v1/notifications/**
+
+server:
+  # The single entry point. Every service keeps its own port, but only this one
+  # should be exposed publicly.
+  port: 8080
+
+jwt:
+  # Must be the SAME value user-service signs with, or every request is rejected.
+  # Base64: decoded and used as an HS256 key (needs >= 32 bytes).
+  secret: ${JWT_SECRET:39NCVLkAJG+XR67PxwWkgP+P8fhYglztTCX/HMoOgPI=}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  level:
+    com.linkedin.apigateway: INFO
+    org.springframework.cloud.gateway: INFO
