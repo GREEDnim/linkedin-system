@@ -32,7 +32,11 @@ services:
   # ELASTICSEARCH — Search
   # ─────────────────────────────────────────
   elasticsearch:
-    image: elasticsearch:8.11.0
+    # Must match the elasticsearch-java client managed by Spring Boot: Boot 4.1.2
+    # brings spring-data-elasticsearch 6.1.2 -> elasticsearch-java 9.4.8, and a 9.x
+    # client refuses to talk to an 8.x server ("Accept version must be either
+    # version 8 or 7, but found 9"). Keep these versions in step.
+    image: elasticsearch:9.4.8
     container_name: elasticsearch
     environment:
       - discovery.type=single-node

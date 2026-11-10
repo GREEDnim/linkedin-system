@@ -1,3 +1,36 @@
+server:
+  port: 8084
+
 spring:
   application:
     name: search-service
+
+  # The 9.x client managed by Boot refuses to talk to an 8.x server, so the
+  # docker-compose image must stay in step with spring-data-elasticsearch.
+  elasticsearch:
+    uris: ${ES_URIS:http://localhost:9200}
+    connection-timeout: 5s
+    socket-timeout: 10s
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: search-service
+      # Replay retained events on a fresh group so a brand-new index backfills
+      # itself from topic history instead of starting empty.
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      # Wrapper so a single poison record cannot wedge the partition; the real
+      # deserializer is the delegate below.
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JacksonJsonDeserializer
+        # Events are produced without type headers on purpose: the JSON body is the
+        # contract, and each @KafkaListener declares its own target type.
+        spring.json.use.type.headers: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info
