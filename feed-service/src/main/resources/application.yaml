@@ -1,3 +1,42 @@
 spring:
   application:
     name: feed-service
+  data:
+    # No database in this service: feeds live in Redis as sorted sets,
+    # one per user: feed:{userId} -> zset of postId scored by post createdAt.
+    # The data only becomes valuable once the Kafka consumers (post.created /
+    # connection.accepted) populate it — endpoint and key structure come first.
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: feed-service
+      # No committed offsets exist on first boot: replay the topic from the
+      # start so posts published before this service existed flow in too.
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      # Wrap the JSON deserializer so one undecodable record (a "poison pill")
+      # becomes a logged, skipped delivery instead of the consumer crashing
+      # on the same record forever.
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JacksonJsonDeserializer
+        # The events carry no __TypeId__ headers — the JSON body is the
+        # contract. Never trust type headers even if someone starts sending them.
+        spring.json.use.type.headers: false
+
+server:
+  port: 8083
+
+feed:
+  # Hard cap per user's stored feed. Every fan-out trims to keep only the newest
+  # entries, which bounds both Redis memory and the cost of a single write.
+  max-feed-size: 1000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
