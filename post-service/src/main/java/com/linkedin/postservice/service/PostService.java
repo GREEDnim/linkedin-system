@@ -115,6 +115,33 @@ public class PostService {
         return PostResponse.from(post);
     }
 
+    /**
+     * Removes every post by an account that no longer exists.
+     *
+     * <p>One transaction on purpose: an account deletion is rare, and a partial cascade would
+     * leave content half-removed with no way to resume. Each post publishes post.deleted, so
+     * feed-service and search-service clean up through the paths they already own instead of
+     * needing to know what an account is.
+     *
+     * <p>At a scale where one account owns thousands of posts this belongs in a batch job,
+     * since the whole set is held in a single transaction.
+     */
+    @Transactional
+    public void deletePostsByAuthor(String authorId) {
+
+        List<Post> posts = postRepository.findByAuthorIdOrderByCreatedAtDesc(authorId);
+
+        for (Post post : posts) {
+            commentRepository.deleteAllByPostId(post.getId());
+            likeRepository.deleteAllByPostId(post.getId());
+            postRepository.delete(post);
+            s3Service.deleteObject(post.getImageKey());
+            kafkaTemplate.send(POST_DELETED_TOPIC, post.getId(), PostDeletedEvent.from(post));
+        }
+
+        log.info("Removed {} posts for deleted account {}", posts.size(), authorId);
+    }
+
     /** A profile's post list. Unknown authors simply return an empty list. */
     @Transactional(readOnly = true)
     public List<PostResponse> getPostsByAuthor(String authorId) {

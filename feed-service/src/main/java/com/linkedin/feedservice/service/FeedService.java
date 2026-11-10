@@ -1,5 +1,6 @@
 package com.linkedin.feedservice.service;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Collection;
@@ -7,8 +8,11 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.RedisOperations;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.SessionCallback;
+import org.springframework.data.redis.core.SetOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.stereotype.Service;
@@ -37,6 +41,13 @@ public class FeedService {
 
     private static final String FEED_KEY_PREFIX = "feed:";
     private static final String CONNECTIONS_KEY_PREFIX = "connections:";
+    private static final String POST_KEY_PREFIX = "post:";
+
+    /**
+     * How long the post -> recipients index is kept. It only has to outlive the post; a post that
+     * is still being deleted after this long falls back to the graph (see removePostFromFeeds).
+     */
+    private static final Duration POST_INDEX_TTL = Duration.ofDays(30);
 
     private final StringRedisTemplate redisTemplate;
     private final FeedProperties feedProperties;
@@ -150,7 +161,15 @@ public class FeedService {
      */
     public void removePostFromFeeds(String authorId, String postId) {
 
-        Set<String> targets = fanOutTargets(authorId);
+        Set<String> indexed = redisTemplate.opsForSet().members(postKey(postId));
+
+        // The reverse index is authoritative: it names the feeds that actually received the post.
+        // Recomputing from the graph was wrong whenever a connection changed between publish and
+        // delete - most visibly on account deletion, where the graph entry is removed before the
+        // posts are, so the rebuilt target set was missing exactly the people holding the post.
+        final Set<String> targets = (indexed == null || indexed.isEmpty())
+                ? fanOutTargets(authorId)   // posts published before the index existed
+                : indexed;
 
         redisTemplate.executePipelined(new SessionCallback<Object>() {
             @Override
@@ -165,6 +184,8 @@ public class FeedService {
                 return null;
             }
         });
+
+        redisTemplate.delete(postKey(postId));
 
         log.info("Un-fanout: post {} removed from {} feeds", postId, targets.size());
     }
@@ -206,16 +227,25 @@ public class FeedService {
                 ZSetOperations<String, String> feeds =
                         ((RedisOperations<String, String>) operations).opsForZSet();
 
+                SetOperations<String, String> sets =
+                        ((RedisOperations<String, String>) operations).opsForSet();
+
                 for (String userId : userIds) {
                     String key = feedKey(userId);
 
                     feeds.add(key, postId, score);
+
+                    // Reverse index: exactly who received this post. Un-fanout reads it instead of
+                    // recomputing the author's connections, which by then may have changed.
+                    sets.add(postKey(postId), userId);
 
                     // Keep only the newest maxFeedSize entries: drop from the oldest
                     // side (ZREMRANGEBYRANK). No-op while the feed is under the cap,
                     // because rank -(N+1) is beyond the end.
                     feeds.removeRange(key, 0, keepFromOldest);
                 }
+
+                ((RedisOperations<String, String>) operations).expire(postKey(postId), POST_INDEX_TTL);
                 return null;
             }
         });
@@ -227,6 +257,38 @@ public class FeedService {
     }
 
     /** Key of the set holding {@code userId}'s connections. */
+    /**
+     * Removes a deleted account from this service entirely.
+     *
+     * <p>Their own keys go first, then their id is removed from every connection set. That last
+     * part needs a scan of the keyspace: the graph stores edges in the direction they are read
+     * ("who does this user follow"), so there is no index from a user to the sets containing
+     * them. SCAN rather than KEYS so the server is not blocked while it runs, and this is
+     * acceptable only because account deletion is rare - a frequent operation would need a
+     * reverse index instead.
+     */
+    public void removeUser(String userId) {
+
+        redisTemplate.delete(List.of(feedKey(userId), connectionsKey(userId)));
+
+        long cleaned = 0;
+        ScanOptions options = ScanOptions.scanOptions().match(CONNECTIONS_KEY_PREFIX + "*").count(200).build();
+        try (Cursor<String> cursor = redisTemplate.scan(options)) {
+            while (cursor.hasNext()) {
+                String key = cursor.next();
+                Long removed = redisTemplate.opsForSet().remove(key, userId);
+                cleaned += removed == null ? 0 : removed;
+            }
+        }
+
+        log.info("Removed feed and graph entries for deleted account {} ({} references cleared)",
+                userId, cleaned);
+    }
+
+    static String postKey(String postId) {
+        return POST_KEY_PREFIX + postId;
+    }
+
     static String connectionsKey(String userId) {
         return CONNECTIONS_KEY_PREFIX + userId;
     }

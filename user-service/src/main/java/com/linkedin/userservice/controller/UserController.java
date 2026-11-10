@@ -114,6 +114,23 @@ public class UserController {
         return ResponseEntity.ok(userService.disconnect(connectionId, requestingUserId));
     }
 
+    /**
+     * Deletes the caller's own account.
+     *
+     * <p>Irreversible, and cascaded through user.deleted rather than by reaching into other
+     * services. A 204 is returned even though the account is gone, because the alternative - a
+     * body describing something that no longer exists - helps nobody.
+     */
+    @DeleteMapping("/{userId}")
+    public ResponseEntity<Void> deleteAccount(
+            @PathVariable String userId,
+            @RequestHeader("X-User-Id") String requestingUserId) {
+
+        requireSelf(userId, requestingUserId);
+        userService.deleteAccount(userId);
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/{userId}/connections")
     public ResponseEntity<List<UserResponse>> getConnections(
             @PathVariable String userId,

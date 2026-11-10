@@ -4,6 +4,7 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
 import com.linkedin.searchservice.event.UserCreatedEvent;
+import com.linkedin.searchservice.event.UserDeletedEvent;
 import com.linkedin.searchservice.event.UserUpdatedEvent;
 import com.linkedin.searchservice.service.SearchService;
 
@@ -11,17 +12,16 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Keeps the {@code users} index in step with user-service.
+ * Maintains the people index from the user lifecycle: index on create, re-index on update,
+ * remove on delete.
  *
- * <p>Recovery: the index is a projection with no database behind it, so a lost index
- * cannot rebuild itself from committed offsets. To rebuild, delete the index and restart
- * with a fresh consumer group (for example {@code --spring.kafka.consumer.group-id=search-service-rebuild-1}),
- * which replays the retained {@code user.created} / {@code user.updated} history from the
- * beginning. Kafka retention is therefore the real limit on how far back a rebuild can go.
+ * <p>The index is a projection: it can only forget someone if it is told. Without this listener
+ * a deleted user stays findable by name, headline, location and skills indefinitely - searchable
+ * personal data for an account that no longer exists.
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
+@RequiredArgsConstructor
 public class UserEventConsumer {
 
     private final SearchService searchService;
@@ -40,5 +40,13 @@ public class UserEventConsumer {
     public void onUserUpdated(UserUpdatedEvent event) {
         log.info("Re-indexing updated user: {}", event == null ? null : event.userId());
         searchService.indexUpdatedUser(event);
+    }
+
+    @KafkaListener(topics = "user.deleted",
+            properties = {"spring.json.value.default.type=com.linkedin.searchservice.event.UserDeletedEvent"})
+    public void onUserDeleted(UserDeletedEvent event) {
+
+        log.info("Received user.deleted: {}", event);
+        searchService.removeUser(event.userId());
     }
 }

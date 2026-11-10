@@ -27,6 +27,19 @@ spring:
         # Do not stamp __TypeId__ headers: consumers in other services would otherwise
         # fail unless they share this exact classpath. The JSON body is the contract.
         spring.json.add.type.headers: false
+    consumer:
+      # post-service only started consuming when it had to clean up after a deleted account
+      # (user.deleted -> remove that account's posts). Without a group id a @KafkaListener
+      # refuses to start at all, so this block is not optional once any listener exists.
+      group-id: post-service
+      # Retained user.deleted events are worth replaying on a first boot: an account deleted
+      # while this service was down would otherwise keep its posts forever.
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JacksonJsonDeserializer
+        spring.json.use.type.headers: false
   servlet:
     multipart:
       max-file-size: 5MB

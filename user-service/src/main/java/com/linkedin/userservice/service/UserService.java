@@ -24,6 +24,7 @@ import com.linkedin.userservice.entity.User;
 import com.linkedin.userservice.event.ConnectionAcceptedEvent;
 import com.linkedin.userservice.event.ConnectionDeletedEvent;
 import com.linkedin.userservice.event.ConnectionRequestedEvent;
+import com.linkedin.userservice.event.UserDeletedEvent;
 import com.linkedin.userservice.event.UserUpdatedEvent;
 import com.linkedin.userservice.exception.ApiException;
 import com.linkedin.userservice.repository.ConnectionRepository;
@@ -41,6 +42,7 @@ public class UserService {
     private static final String CONNECTION_ACCEPTED_TOPIC = "connection.accepted";
     private static final String CONNECTION_DELETED_TOPIC = "connection.deleted";
     private static final String USER_UPDATED_TOPIC = "user.updated";
+    private static final String USER_DELETED_TOPIC = "user.deleted";
 
     private final ConnectionRepository connectionRepository;
     private final UserRepository userRepository;
@@ -274,6 +276,37 @@ public class UserService {
 
         log.info("profile photo uploaded for user: {}", userId);
         return UserResponse.from(saved);
+    }
+
+    /**
+     * Deletes an account and everything that belongs to it here.
+     *
+     * <p>Order matters. Connections go first because they are mutual and reference this user
+     * from either side; skills are removed with their owner, since they are an
+     * {@code @ElementCollection} of the user rather than rows of their own. The avatar is then
+     * deleted from object storage, and the event is published last: consumers must not learn
+     * about the deletion before it is true.
+     *
+     * <p>Other services clean up after themselves from the event. post-service removes the
+     * user's posts (which un-fans them through the existing post.deleted path), search-service
+     * drops the index document, feed-service drops the feed and the graph entry.
+     *
+     * <p>Access tokens are not revoked: they are stateless and live at most fifteen minutes.
+     * A refresh token stops working immediately, because the refresh path loads the user.
+     */
+    @Transactional
+    public void deleteAccount(String userId) {
+
+        User user = findUserOrThrow(userId);
+        String avatarKey = user.getProfilePhotoKey();
+
+        int connections = connectionRepository.deleteAllForUser(userId);
+        userRepository.delete(user);
+
+        s3Service.deleteObject(avatarKey);
+
+        kafkaTemplate.send(USER_DELETED_TOPIC, userId, new UserDeletedEvent(userId));
+        log.info("Account {} deleted ({} connections removed)", userId, connections);
     }
 
     private User findUserOrThrow(String userId) {

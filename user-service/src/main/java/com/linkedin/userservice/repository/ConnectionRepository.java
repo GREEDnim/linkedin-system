@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -41,6 +42,16 @@ public interface ConnectionRepository extends JpaRepository<Connection, String> 
     /** Incoming requests the user has not answered yet, newest first. */
     List<Connection> findByReceiverIdAndStatusOrderByCreatedAtDesc(
             String receiverId, ConnectionStatus status);
+
+    /**
+     * Removes every connection touching a user, in both directions.
+     *
+     * <p>Used when an account is deleted. A connection is mutual and stored as one row, so
+     * leaving it behind would point the surviving user at somebody who no longer exists.
+     */
+    @Modifying
+    @Query("delete from Connection c where c.requesterId = :userId or c.receiverId = :userId")
+    int deleteAllForUser(@Param("userId") String userId);
 }
 
 

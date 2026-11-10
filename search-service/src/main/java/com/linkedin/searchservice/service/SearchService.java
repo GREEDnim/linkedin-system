@@ -6,6 +6,7 @@ import java.util.Locale;
 import java.util.Map;
 
 import org.springframework.data.domain.Page;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
 import com.linkedin.searchservice.document.PostDocument;
@@ -52,6 +53,23 @@ public class SearchService {
      * profile edit that follows publishes {@code user.updated}, which adds headline,
      * location and skills without this handler having to guess at them.
      */
+    /**
+     * Drops a user from the people index.
+     *
+     * <p>Idempotent: a redelivered event for an already-removed document is a no-op, which is
+     * what keeps at-least-once delivery safe here.
+     */
+    public void removeUser(String userId) {
+
+        try {
+            userSearchRepository.deleteById(userId);
+            log.info("Removed user {} from the index", userId);
+        } catch (DataAccessException ex) {
+            log.error("Could not remove user {} from the index", userId, ex);
+            throw ex;
+        }
+    }
+
     public void indexNewUser(UserCreatedEvent event) {
         if (isInvalid(event == null ? null : event.userId(), "user.created")) {
             return;
