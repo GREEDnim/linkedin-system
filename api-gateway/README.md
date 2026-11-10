@@ -136,7 +136,9 @@ for humans and may change.
 | `gateway.cors.allowed-origins` | `CORS_ALLOWED_ORIGINS` | four localhost dev origins |
 | `spring.data.redis.host` | `REDIS_HOST` | `localhost` |
 
-Under the `prod` profile the same secret guard as user-service refuses to start on the development key.
+The same secret guard as user-service: with the committed development key and no `dev` profile —
+including no profile at all — this service refuses to start rather than sign tokens with a value
+that is in the repository. Start it locally with `SPRING_PROFILES_ACTIVE=dev`.
 
 ---
 

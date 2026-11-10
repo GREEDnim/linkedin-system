@@ -149,7 +149,7 @@ docker compose up -d mysql kafka s3mock
 | Setting | Env | Default |
 |---|---|---|
 | `spring.datasource.url` | `DB_HOST`, `DB_PORT`, `DB_NAME` | `post_db` on `localhost:3306` |
-| `aws.endpoint` | `AWS_ENDPOINT` | `http://localhost:9090` |
+| `aws.endpoint` | `AWS_ENDPOINT` | *empty* — real AWS. Set `http://localhost:9090` for s3mock |
 | `aws.bucket-name` | `AWS_S3_BUCKET` | `linkedin-post-media` |
 | `server.address` | `SERVER_ADDRESS` | `127.0.0.1` |
 

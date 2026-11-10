@@ -1,0 +1,15 @@
+# Local environment. A .env holds per-machine values and is never committed; .env.example is the
+# committed list of every variable the services read. Ignored here because this repository had no
+# root .gitignore, so a local .env would have shown up in `git status` and been one `git add -A`
+# away from history.
+.env
+.env.*
+!.env.example
+
+# Build output. Each service ships the Spring Initializr .gitignore; this is the belt to its
+# braces, for anything run from the repository root.
+**/target/
+
+# OS and editor noise
+.DS_Store
+Thumbs.db

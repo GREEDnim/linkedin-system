@@ -212,15 +212,20 @@ which this system does not have.
 
 ```bash
 docker compose up -d mysql redis kafka s3mock
-./mvnw spring-boot:run          # :8081
+export AWS_ENDPOINT=http://localhost:9090      # without it, uploads go to real AWS and fail
+SPRING_PROFILES_ACTIVE=dev ./mvnw spring-boot:run          # :8081
 ```
+
+The `dev` profile is required, not cosmetic: with the committed signing key and no profile, this
+service refuses to start.
 
 | Setting | Env | Default |
 |---|---|---|
-| `jwt.secret` | `JWT_SECRET` | dev key — **must match the gateway** |
+| `jwt.secret` | `JWT_SECRET` | dev key — **must match the gateway**, and only accepted under `dev` |
 | `jwt.expiration` | `JWT_EXPIRATION` | `900000` ms |
 | `jwt.refresh-expiration` | `JWT_REFRESH_EXPIRATION` | `604800000` ms |
 | `jwt.issuer` | `JWT_ISSUER` | `user-service` |
+| `aws.endpoint` | `AWS_ENDPOINT` | *empty* — real AWS. Set `http://localhost:9090` for s3mock |
 | `aws.bucket-name` | `AWS_S3_BUCKET` | `linkedin-profile-media` |
 | `server.address` | `SERVER_ADDRESS` | `127.0.0.1` |
 

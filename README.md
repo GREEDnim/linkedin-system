@@ -177,7 +177,7 @@ routed to `<topic>-dlt` rather than blocking the partition.
 | Rotation + replay detection | user-service `AuthService` | a stolen refresh token being reused after the legitimate client rotated it |
 | `X-User-Id` injection | gateway | clients dictating their own identity — the header is stripped and rebuilt |
 | Rate limiting | gateway `RateLimitFilter` | password guessing (20/min on `/auth/**`) and scraping (600/min elsewhere) |
-| Loopback binding | every service | direct access that skips the gateway |
+| Loopback binding | the five domain services | direct access that skips the gateway; the gateway itself listens on every interface, being the intended entry point |
 | CORS allow-list | gateway `CorsFilter` | arbitrary origins reading responses with credentials |
 
 Known gaps, stated plainly: a client at `127.0.0.1` can still call a service directly, because
@@ -189,17 +189,27 @@ remaining 15 minutes. Both are documented in the service READMEs rather than pap
 ## Quick start
 
 ```bash
-# 1. Infrastructure: MySQL, Redis, Elasticsearch, Kafka, S3
+# 1. Infrastructure: MySQL, Redis, Elasticsearch, Kafka, S3 (published on loopback only)
 docker compose up -d
 
-# 2. Services — one terminal each, gateway last
-cd user-service         && ./mvnw -q spring-boot:run   # :8081
-cd post-service         && ./mvnw -q spring-boot:run   # :8082
-cd feed-service         && ./mvnw -q spring-boot:run   # :8083
-cd search-service       && ./mvnw -q spring-boot:run   # :8084
-cd notification-service && ./mvnw -q spring-boot:run   # :8085
-cd api-gateway          && ./mvnw -q spring-boot:run   # :8080
+# 2. Point the media path at the local S3 stand-in. Without this the SDK talks to real AWS,
+#    where dev-access-key is not a credential, and every upload fails.
+export AWS_ENDPOINT=http://localhost:9090
+export AWS_ACCESS_KEY=dev-access-key
+export AWS_SECRET_KEY=dev-secret-key
+
+# 3. Services — one terminal each, gateway last. user-service and api-gateway additionally need
+#    the dev profile: they refuse to boot on the committed signing key without it.
+cd user-service         && SPRING_PROFILES_ACTIVE=dev ./mvnw -q spring-boot:run   # :8081
+cd post-service         && ./mvnw -q spring-boot:run                              # :8082
+cd feed-service         && ./mvnw -q spring-boot:run                              # :8083
+cd search-service       && ./mvnw -q spring-boot:run                              # :8084
+cd notification-service && ./mvnw -q spring-boot:run                              # :8085
+cd api-gateway          && SPRING_PROFILES_ACTIVE=dev ./mvnw -q spring-boot:run   # :8080
 ```
+
+`.env.example` lists every variable above; copy it to `.env` (gitignored) and `set -a; . ./.env;
+set +a` to get the same environment without repeating the exports.
 
 Order matters only loosely: `user-service` creates `user_db` on first start
 (`createDatabaseIfNotExist`), everything else waits for Kafka, and the gateway goes last so its
@@ -243,21 +253,23 @@ Every service reads the same environment contract; defaults target local develop
 | `REDIS_HOST` / `REDIS_PORT` | `localhost` / `6379` | user, feed, gateway | sessions, timelines, counters |
 | `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | all but gateway | event bus |
 | `ES_URIS` | `http://localhost:9200` | search | Elasticsearch endpoint |
-| `AWS_ENDPOINT` | `http://localhost:9090` | user, post | S3 mock; unset it for real S3 |
+| `AWS_ENDPOINT` | *empty* | user, post | S3-compatible endpoint. Empty means real AWS; set `http://localhost:9090` for s3mock |
 | `AWS_S3_BUCKET` | `linkedin-profile-media` / `linkedin-post-media` | user, post | media buckets |
-| `JWT_SECRET` | dev key | user, gateway | **must match** across both; overridden in prod |
+| `JWT_SECRET` | dev key | user, gateway | **must match** across both; the dev key only works under the `dev` profile |
 | `JWT_EXPIRATION` | `900000` (15 min) | user | access token lifetime, ms |
 | `JWT_REFRESH_EXPIRATION` | `604800000` (7 days) | user | refresh token lifetime, ms |
 | `JWT_ISSUER` | `user-service` | user, gateway | `iss` claim, verified at the edge |
-| `RATE_LIMIT_AUTH_PER_MINUTE` | `20` | gateway | login/register/refresh budget per IP |
-| `RATE_LIMIT_API_PER_MINUTE` | `600` | gateway | every other route, per IP |
+| `RATE_LIMIT_AUTH` | `20` | gateway | login/register/refresh budget per IP |
+| `RATE_LIMIT_API` | `600` | gateway | every other route, per IP |
 | `CORS_ALLOWED_ORIGINS` | `localhost:3000,5173,8081,19006` | gateway | browser origins |
-| `SERVER_ADDRESS` | `127.0.0.1` | all services | loopback only; `0.0.0.0` inside containers |
-| `SPRING_PROFILES_ACTIVE` | — | user, gateway | `prod` enables the secret guard |
+| `SERVER_ADDRESS` | `127.0.0.1` | user, post, feed, search, notification | loopback only; `0.0.0.0` inside containers. The gateway deliberately does **not** set this — it is the port meant to be reachable. |
+| `SPRING_PROFILES_ACTIVE` | — | user, gateway | `dev` accepts the committed signing key; anything else, **including unset**, refuses to boot with it |
 
-The last two matter operationally. Under `prod`, `user-service` and `api-gateway` refuse to start if
-`JWT_SECRET` is still the development value — a misconfigured deploy fails loudly instead of signing
-tokens with a key that is in the repository.
+The last one matters operationally, and it is deliberately inverted. `user-service` and
+`api-gateway` refuse to start when `JWT_SECRET` is still the development value unless the `dev`
+profile is active. A check that fired only under `prod` would protect the deployments that
+remembered to declare themselves; the one that needs protecting is the deployment that forgot, and
+that one boots with no profile at all. Silence is treated as production.
 
 ---
 
@@ -314,7 +326,8 @@ Honest list, roughly by priority.
 ├── scripts/
 │   ├── e2e.sh              end-to-end regression, 134 checks
 │   └── concurrency.sh      interleaving checks, 7 cases
-└── docker-compose.yml      MySQL, Redis, Elasticsearch, Kafka, s3mock
+├── docker-compose.yml      MySQL, Redis, Elasticsearch, Kafka, s3mock — all on loopback
+└── .env.example            every variable the services read, with development values
 ```
 
 Each service documents its own architecture, data model, endpoints and events:

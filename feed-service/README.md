@@ -148,7 +148,7 @@ docker compose up -d redis kafka
 | Setting | Env | Default |
 |---|---|---|
 | `spring.data.redis.host` | `REDIS_HOST` | `localhost` |
-| `feed.max-feed-size` | `FEED_MAX_SIZE` | `1000` |
+| `feed.max-feed-size` | — (hardcoded) | `1000` |
 | `server.address` | `SERVER_ADDRESS` | `127.0.0.1` |
 
 ---
