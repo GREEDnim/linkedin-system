@@ -2,6 +2,7 @@ package com.linkedin.userservice.exception;
 
 import java.util.List;
 
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -109,6 +110,21 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleUnexpected(Exception ex) {
         log.error("Unhandled exception", ex);
         return build(HttpStatus.INTERNAL_SERVER_ERROR, "Unexpected error", List.of());
+    }
+
+    /**
+     * Unique-key / foreign-key violations.
+     *
+     * <p>Two concurrent "connect" requests can both pass the service-level check and then race
+     * on uk_connections_pair; the database is the final guard, so its objection means the request
+     * conflicts with current state, not that the server failed. Reporting 500 here told clients an
+     * outage had happened when in fact their request had simply been overtaken.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleDataIntegrityViolation(DataIntegrityViolationException ex) {
+        log.warn("Data integrity violation: {}", ex.getMostSpecificCause().getMessage());
+        return build(HttpStatus.CONFLICT,
+                "The request conflicts with the current state of the resource", List.of());
     }
 
     private ResponseEntity<ErrorResponse> build(HttpStatus status, String message, List<String> details) {
