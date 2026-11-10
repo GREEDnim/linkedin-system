@@ -50,6 +50,27 @@ services:
       - linkedin-network
 
   # ─────────────────────────────────────────
+  # S3 — object storage for local development (adobe/s3mock)
+  #
+  # MinIO stopped publishing a community image in 2025, so this is the stand-in:
+  # a real S3 API, which means S3Service is exercised for real (upload, content
+  # type, generated URL) instead of being stubbed. Point a service at it with
+  # AWS_ENDPOINT=http://localhost:9090 and any credentials; when AWS_ENDPOINT is
+  # absent the SDK talks to AWS as usual. Buckets are declared up front so the
+  # services never need permission to create them.
+  # ─────────────────────────────────────────
+  s3mock:
+    image: adobe/s3mock:latest
+    container_name: s3mock
+    environment:
+      initialBuckets: linkedin-profile-media,linkedin-post-media
+      COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS: linkedin-profile-media,linkedin-post-media
+    ports:
+      - "9090:9090"
+    networks:
+      - linkedin-network
+
+  # ─────────────────────────────────────────
   # Kafka, KRaft
   # ─────────────────────────────────────────
   kafka:

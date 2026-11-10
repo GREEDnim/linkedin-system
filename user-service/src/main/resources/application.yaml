@@ -37,6 +37,9 @@ aws:
   access-key: ${AWS_ACCESS_KEY:dev-access-key}
   secret-key: ${AWS_SECRET_KEY:dev-secret-key}
   region: ${AWS_REGION:us-east-1}
+  # Blank means "talk to AWS". Set AWS_ENDPOINT=http://localhost:9090 to use the
+  # s3mock container from docker-compose instead, which makes uploads testable locally.
+  endpoint: ${AWS_ENDPOINT:}
   s3:
     bucket-name: ${AWS_S3_BUCKET:linkedin-profile-media}
 
