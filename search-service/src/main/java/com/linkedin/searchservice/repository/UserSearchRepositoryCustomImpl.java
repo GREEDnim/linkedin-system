@@ -8,24 +8,17 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.elasticsearch.client.elc.NativeQuery;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
-import org.springframework.data.elasticsearch.core.RefreshPolicy;
 import org.springframework.data.elasticsearch.core.SearchHit;
 import org.springframework.data.elasticsearch.core.SearchHitSupport;
 import org.springframework.data.elasticsearch.core.SearchHits;
 import org.springframework.data.elasticsearch.core.SearchPage;
-import org.springframework.data.elasticsearch.core.document.Document;
-import org.springframework.data.elasticsearch.core.query.UpdateQuery;
 
 import com.linkedin.searchservice.document.UserDocument;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-/**
- * Spring Data fragment implementation. Naming matters: Spring Data looks for
- * {@code <FragmentInterface>Impl}, so this class is what makes {@code UserSearchRepository}
- * satisfy {@link UserSearchRepositoryCustom}.
- */
+/** Spring Data fragment implementation (the {@code ...Impl} naming is what wires it in). */
 @RequiredArgsConstructor
 @Slf4j
 public class UserSearchRepositoryCustomImpl implements UserSearchRepositoryCustom {
@@ -48,20 +41,11 @@ public class UserSearchRepositoryCustomImpl implements UserSearchRepositoryCusto
             "location^1");
 
     private final ElasticsearchOperations operations;
+    private final PartialIndexWriter partialIndexWriter;
 
     @Override
     public void upsertPartial(String userId, Map<String, Object> fields) {
-        UpdateQuery update = UpdateQuery.builder(userId)
-                .withDocument(Document.from(fields))
-                .withDocAsUpsert(true)
-                // WAIT_UNTIL makes the write visible to the very next search. That costs a
-                // refresh per document - fine at this volume, and it makes the pipeline
-                // deterministic instead of flaky.
-                .withRefreshPolicy(RefreshPolicy.WAIT_UNTIL)
-                .build();
-
-        operations.update(update, operations.getIndexCoordinatesFor(UserDocument.class));
-        log.debug("Indexed user {}", userId);
+        partialIndexWriter.upsert(UserDocument.class, userId, fields);
     }
 
     @Override
@@ -75,8 +59,6 @@ public class UserSearchRepositoryCustomImpl implements UserSearchRepositoryCusto
                         .should(s -> s.multiMatch(m -> m
                                 .query(query)
                                 .fields(SEARCH_FIELDS)
-                                // AUTO: tolerate typos without letting a one-letter query
-                                // match everything.
                                 .fuzziness("AUTO")))
                         // Email: exact match only, against the lower-cased keyword field.
                         .should(s -> s.term(t -> t
@@ -87,8 +69,7 @@ public class UserSearchRepositoryCustomImpl implements UserSearchRepositoryCusto
 
         SearchHits<UserDocument> hits = operations.search(nativeQuery, UserDocument.class);
 
-        // SearchPage<Document> is a Page<SearchHit<Document>>; flatten the hits away so
-        // callers get plain documents and a normal Page (total, pages, hasNext).
+        // SearchPage<Document> is a Page<SearchHit<Document>>; flatten to plain documents.
         SearchPage<UserDocument> searchPage = SearchHitSupport.searchPageFor(hits, pageable);
         return searchPage.map(SearchHit::getContent);
     }
